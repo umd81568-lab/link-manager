@@ -23,6 +23,8 @@ def main():
         "bash -lc 'grep -q ^LINK_CREATE_LIMIT= /etc/links.env && sed -i \"s/^LINK_CREATE_LIMIT=.*/LINK_CREATE_LIMIT=10/\" /etc/links.env || echo LINK_CREATE_LIMIT=10 >> /etc/links.env'",
         "bash -lc 'grep -q ^LINK_UPDATE_LIMIT= /etc/links.env && sed -i \"s/^LINK_UPDATE_LIMIT=.*/LINK_UPDATE_LIMIT=200/\" /etc/links.env || echo LINK_UPDATE_LIMIT=200 >> /etc/links.env'",
         "bash -lc 'grep -q ^LINK_SAFE_MODE= /etc/links.env && sed -i \"s/^LINK_SAFE_MODE=.*/LINK_SAFE_MODE=1/\" /etc/links.env || echo LINK_SAFE_MODE=1 >> /etc/links.env'",
+        "bash -lc 'grep -q ^LINK_HTML_DIR= /etc/links.env && sed -i \"s|^LINK_HTML_DIR=.*|LINK_HTML_DIR=/opt/links/data/html_pages|\" /etc/links.env || echo LINK_HTML_DIR=/opt/links/data/html_pages >> /etc/links.env'",
+        "mkdir -p /opt/links/data/html_pages && chmod 750 /opt/links/data/html_pages",
         "bash -lc 'which ufw >/dev/null 2>&1 && ufw allow 5002/tcp || true'",
         "systemctl daemon-reload",
         "systemctl restart links",

@@ -464,6 +464,7 @@ touch /etc/links.env
 if [ ! -s /etc/links.env ]; then
 cat > /etc/links.env <<'EOF'
 LINK_ADMIN_TOKEN=changeme
+LINK_HTML_DIR=/opt/links/data/html_pages
 EOF
 fi
 
@@ -480,6 +481,10 @@ mkdir -p /opt/links/dashboard
 if [ -d /var/www/dashboard ]; then
   cp -r /var/www/dashboard/* /opt/links/dashboard/ || true
 fi
+
+# Create HTML pages storage directory
+mkdir -p /opt/links/data/html_pages
+chmod 750 /opt/links/data/html_pages
 
 systemctl daemon-reload
 systemctl enable links
