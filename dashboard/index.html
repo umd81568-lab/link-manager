@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sovereign Guardian | Control Center</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="logo">
+            <i class="fa-solid fa-shield-halved"></i>
+            <span>Sovereign</span>
+        </div>
+
+        <ul class="nav-menu">
+            <li class="nav-item active" data-target="dashboard">
+                <i class="fa-solid fa-chart-line"></i> Dashboard
+            </li>
+            <li class="nav-item" data-target="html-pages">
+                <i class="fa-solid fa-file-code"></i> HTML Pages
+            </li>
+            <li class="nav-item" data-target="generator">
+                <i class="fa-solid fa-plus-circle"></i> New Link
+            </li>
+            <li class="nav-item" data-target="editor">
+                <i class="fa-solid fa-pen-to-square"></i> Edit/Fix Link
+            </li>
+            <li class="nav-item" data-target="ai-agent">
+                <i class="fa-solid fa-robot"></i> AI Guardian
+            </li>
+            <li class="nav-item" data-target="settings">
+                <i class="fa-solid fa-gears"></i> Settings
+            </li>
+        </ul>
+
+        <div style="margin-top: auto; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+            <div class="status-badge" style="background: rgba(0, 242, 234, 0.1); border-color: var(--primary); color: var(--primary); margin-bottom: 0.5rem;">
+                <i class="fa-solid fa-mask"></i> Stealth Mode: ON
+            </div>
+            <div class="status-badge">
+                <div class="status-dot"></div>
+                System Online
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        
+        <!-- Dashboard Section -->
+        <section id="dashboard" class="section active">
+            <div class="header">
+                <h1>System Overview</h1>
+                <div style="color: var(--text-muted);">Welcome back, Commander</div>
+            </div>
+
+            <!-- Smart Action Bar -->
+            <div class="card" style="margin-bottom: 2rem; border: 1px solid var(--primary); background: rgba(0, 242, 234, 0.05);">
+                <div class="input-group" style="margin-bottom: 0;">
+                    <label style="color: var(--primary); font-weight: bold;"><i class="fa-solid fa-wand-magic-sparkles"></i> Quick Fix / Edit Link</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="quickInput" class="input-field" placeholder="Paste Link Here to Edit Immediately..." style="font-size: 1.1rem;">
+                        <button id="quickActionBtn" class="btn btn-primary">
+                            <i class="fa-solid fa-pen-to-square"></i> Edit
+                        </button>
+                    </div>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 5px;">
+                        * Pasting a link here will open the editor instantly.
+                    </p>
+                </div>
+            </div>
+
+            <div class="grid-container">
+                <div class="card" style="border-left: 4px solid #00ff7f;">
+                    <div class="card-title"><i class="fa-solid fa-shield-halved"></i> Security Shield</div>
+                    <div class="card-value" style="font-size: 1.5rem;">ACTIVE</div>
+                    <div style="color: #00ff7f; font-size: 0.8rem;">Direct IP Access Blocked</div>
+                </div>
+                <div class="card">
+                    <div class="card-title"><i class="fa-solid fa-network-wired"></i> IP Cloaking</div>
+                    <div class="card-value" style="font-size: 1.5rem;">ENGAGED</div>
+                    <div style="color: var(--primary); font-size: 0.8rem;">Traffic via Secure Proxy Only</div>
+                </div>
+                <div class="card">
+                    <div class="card-title"><i class="fa-solid fa-user-secret"></i> Anti-Hacking</div>
+                    <div class="card-value" style="font-size: 1.5rem;">MONITORING</div>
+                    <div style="color: #ff0055; font-size: 0.8rem;">Brute Force Protection On</div>
+                </div>
+                <div class="card" id="dashHtmlCount">
+                    <div class="card-title"><i class="fa-solid fa-file-code"></i> HTML Pages</div>
+                    <div class="card-value" id="dashHtmlCountVal" style="font-size: 1.5rem;">–</div>
+                    <div style="color: var(--primary); font-size: 0.8rem;">Published under blank links</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Live System Logs</div>
+                <div class="terminal-window" id="terminalLogs">
+                    <!-- Logs will appear here -->
+                </div>
+            </div>
+        </section>
+
+        <!-- HTML Pages Section -->
+        <section id="html-pages" class="section">
+            <div class="header">
+                <h1>HTML Pages Manager</h1>
+                <div style="color: var(--text-muted);">Upload HTML files and publish them under blank/custom links</div>
+            </div>
+
+            <!-- Upload Card -->
+            <div class="card" style="max-width: 800px; margin-bottom: 1.5rem; border: 1px solid var(--primary); background: rgba(0, 242, 234, 0.04);">
+                <div class="card-title" style="color: var(--primary);"><i class="fa-solid fa-cloud-arrow-up"></i> Publish New HTML Page</div>
+
+                <div class="input-group">
+                    <label>Blank Link Key <span style="color: #ff0055;">*</span></label>
+                    <input type="text" id="html_key" class="input-field" placeholder="e.g. my-page, doc-2024, abc123" autocomplete="off">
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+                        Your page will be available at: <code id="html_preview_url" style="color: var(--primary);">/r/&lt;key&gt;</code>
+                    </p>
+                </div>
+
+                <div class="input-group">
+                    <label>Page Title (optional)</label>
+                    <input type="text" id="html_title" class="input-field" placeholder="e.g. Police Clearance Certificate">
+                </div>
+
+                <div class="input-group">
+                    <label>HTML File <span style="color: #ff0055;">*</span></label>
+                    <div style="border: 2px dashed rgba(0, 242, 234, 0.3); border-radius: 10px; padding: 2rem; text-align: center; cursor: pointer;" id="html_dropzone">
+                        <i class="fa-solid fa-file-code" style="font-size: 3rem; color: var(--text-muted); margin-bottom: 1rem; display: block;"></i>
+                        <p style="color: var(--text-muted); margin-bottom: 1rem;">Drag & drop your HTML file here, or click to choose</p>
+                        <input type="file" id="html_file" accept=".html,.htm" style="display: none;">
+                        <button class="btn" onclick="document.getElementById('html_file').click()" style="background: rgba(255,255,255,0.1); color: white;">
+                            <i class="fa-solid fa-folder-open"></i> Choose HTML File
+                        </button>
+                        <p id="html_filename" style="margin-top: 1rem; color: var(--primary); font-size: 0.9rem; min-height: 1.2em;"></p>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>Admin Token <span style="color: #ff0055;">*</span></label>
+                    <input type="password" id="html_token" class="input-field" placeholder="Your admin token">
+                </div>
+
+                <button id="html_publishBtn" class="btn btn-primary" style="width: 100%;">
+                    <i class="fa-solid fa-rocket"></i> Publish HTML Page
+                </button>
+
+                <div id="html_result" style="margin-top: 1.5rem;"></div>
+            </div>
+
+            <!-- Published Pages List -->
+            <div class="card" style="max-width: 800px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <div class="card-title" style="margin-bottom: 0;"><i class="fa-solid fa-list"></i> Published Pages</div>
+                    <button id="html_refreshBtn" class="btn" style="background: rgba(255,255,255,0.1); color: white; padding: 6px 14px; font-size: 0.85rem;">
+                        <i class="fa-solid fa-rotate"></i> Refresh
+                    </button>
+                </div>
+                <div id="html_pages_list">
+                    <div style="color: var(--text-muted); text-align: center; padding: 2rem;">
+                        <i class="fa-solid fa-circle-info"></i> Enter your admin token above and click Refresh to see published pages.
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Link Generator Section -->
+        <section id="generator" class="section">
+            <div class="header">
+                <h1>Create New Link</h1>
+            </div>
+
+            <div class="card" style="max-width: 800px;">
+                <div class="grid-container" style="grid-template-columns: 1fr 1fr; margin-bottom: 1rem;">
+                    <div class="input-group">
+                        <label>Reference No (Ref)</label>
+                        <input type="text" id="gen_ref" class="input-field" placeholder="e.g. 1CXQBY5">
+                    </div>
+                    <div class="input-group">
+                        <label>Passport Number</label>
+                        <input type="text" id="gen_passport" class="input-field" placeholder="e.g. A18426844">
+                    </div>
+                    <div class="input-group">
+                        <label>Full Name</label>
+                        <input type="text" id="gen_name" class="input-field" placeholder="Full Name">
+                    </div>
+                    <div class="input-group">
+                        <label>Father's Name</label>
+                        <input type="text" id="gen_father" class="input-field" placeholder="Father Name">
+                    </div>
+                    <div class="input-group">
+                        <label>Village</label>
+                        <input type="text" id="gen_village" class="input-field" placeholder="Village">
+                    </div>
+                    <div class="input-group">
+                        <label>Post Office (PO)</label>
+                        <input type="text" id="gen_po" class="input-field" placeholder="Post Office">
+                    </div>
+                    <div class="input-group">
+                        <label>District</label>
+                        <input type="text" id="gen_district" class="input-field" placeholder="District">
+                    </div>
+                    <div class="input-group">
+                        <label>Place</label>
+                        <input type="text" id="gen_place" class="input-field" placeholder="e.g. DIP/DHAKA">
+                    </div>
+                    <div class="input-group">
+                        <label>Issue Date</label>
+                        <input type="date" id="gen_issueDate" class="input-field">
+                    </div>
+                    <div class="input-group">
+                        <label>Address</label>
+                        <input type="text" id="gen_address" class="input-field" placeholder="Full Address">
+                    </div>
+                </div>
+
+                <!-- PDF Upload Section -->
+                <div class="input-group" style="margin-bottom: 2rem; border: 1px dashed rgba(0, 242, 234, 0.3); padding: 2rem; border-radius: 10px; text-align: center;">
+                    <i class="fa-solid fa-file-pdf" style="font-size: 3rem; color: var(--text-muted); margin-bottom: 1rem;"></i>
+                    <label style="display: block; margin-bottom: 1rem;">Upload Police Clearance Certificate (PDF)</label>
+                    <input type="file" id="gen_pdf" accept=".pdf" style="display: none;" onchange="document.getElementById('fileName').innerText = this.files[0].name">
+                    <button class="btn" onclick="document.getElementById('gen_pdf').click()" style="background: rgba(255,255,255,0.1); color: white;">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Choose PDF File
+                    </button>
+                    <p id="fileName" style="margin-top: 1rem; color: var(--primary); font-size: 0.9rem;"></p>
+                </div>
+                
+                <button id="generateBtn" class="btn btn-primary" style="width: 100%;">
+                    <i class="fa-solid fa-bolt"></i> Generate Secure Link
+                </button>
+
+                <div id="resultArea" style="margin-top: 2rem;"></div>
+            </div>
+        </section>
+
+        <!-- Link Editor Section -->
+        <section id="editor" class="section">
+            <div class="header">
+                <h1>Fix/Edit Existing Link</h1>
+            </div>
+
+            <div class="card" style="max-width: 800px;">
+                <div class="input-group">
+                    <label style="color: #00ff7f;">Paste Existing Link Here to Decrypt</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="edit_urlInput" class="input-field" placeholder="https://pccpoicegov.life/ords/f?p=...">
+                        <button id="decryptBtn" class="btn" style="background: #333; color: white;">Decrypt</button>
+                    </div>
+                </div>
+
+                <div id="editorForm" style="display: none; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 2rem; margin-top: 2rem;">
+                    <div class="grid-container" style="grid-template-columns: 1fr 1fr; margin-bottom: 1rem;">
+                        <div class="input-group">
+                            <label>Reference No</label>
+                            <input type="text" id="edit_ref" class="input-field">
+                        </div>
+                        <div class="input-group">
+                            <label>Passport Number</label>
+                            <input type="text" id="edit_passport" class="input-field">
+                        </div>
+                        <div class="input-group">
+                            <label>Name</label>
+                            <input type="text" id="edit_name" class="input-field">
+                        </div>
+                        <div class="input-group">
+                            <label>Father's Name</label>
+                            <input type="text" id="edit_father" class="input-field">
+                        </div>
+                         <div class="input-group">
+                            <label>Village</label>
+                            <input type="text" id="edit_village" class="input-field">
+                        </div>
+                        <div class="input-group">
+                            <label>Post Office</label>
+                            <input type="text" id="edit_po" class="input-field">
+                        </div>
+                        <div class="input-group">
+                            <label>District</label>
+                            <input type="text" id="edit_district" class="input-field">
+                        </div>
+                         <div class="input-group">
+                            <label>Place</label>
+                            <input type="text" id="edit_place" class="input-field">
+                        </div>
+                        <div class="input-group">
+                            <label>Issue Date</label>
+                            <input type="date" id="edit_issueDate" class="input-field">
+                        </div>
+                         <div class="input-group">
+                            <label>Address</label>
+                            <input type="text" id="edit_address" class="input-field">
+                        </div>
+                    </div>
+
+                    <button id="updateLinkBtn" class="btn btn-primary" style="width: 100%; background: linear-gradient(45deg, #ff0055, #ff4444);">
+                        <i class="fa-solid fa-rotate"></i> Update & Generate New Link
+                    </button>
+
+                    <div id="editResultArea" style="margin-top: 2rem;"></div>
+                </div>
+            </div>
+            <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
+                <div class="input-group">
+                    <label style="color: #00ff7f;">Bulk Fix (Paste multiple links, one per line)</label>
+                    <textarea id="bulk_input" class="input-field" rows="6" placeholder="https://pccpoicegov.life/ords/f?p=...\nhttps://pccpolicegovbd.work/ords/f?p=..."></textarea>
+                </div>
+                <button id="bulk_processBtn" class="btn btn-primary" style="width: 100%;">
+                    <i class="fa-solid fa-layer-group"></i> Process All
+                </button>
+                <div id="bulkResultArea" style="margin-top: 2rem;"></div>
+            </div>
+        </section>
+
+        <!-- AI Agent Section -->
+        <section id="ai-agent" class="section">
+            <div class="header">
+                <h1>Sovereign Guardian AI</h1>
+            </div>
+            <div class="card">
+                <p style="color: var(--text-muted);">
+                    <i class="fa-solid fa-microchip"></i> 
+                    I am monitoring your infrastructure. Ask me to perform tasks or analyze security.
+                </p>
+                <!-- Placeholder for future Chat Interface -->
+                <div style="margin-top: 2rem; padding: 2rem; text-align: center; border: 1px dashed rgba(255,255,255,0.2); border-radius: 10px;">
+                    AI Chat Interface Module - Coming Soon
+                </div>
+            </div>
+        </section>
+
+        <!-- Settings Section -->
+        <section id="settings" class="section">
+            <div class="header">
+                <h1>Settings</h1>
+            </div>
+            <div class="card" style="max-width: 800px;">
+                <div class="input-group">
+                    <label>Avatar Provider</label>
+                    <select id="avatarProvider" class="input-field">
+                        <option value="heygen">HeyGen</option>
+                        <option value="did">D-ID</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>API Key</label>
+                    <input type="text" id="avatarApiKey" class="input-field" placeholder="Paste API Key">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button id="saveAvatarApi" class="btn btn-primary">
+                        <i class="fa-solid fa-floppy-disk"></i> Save
+                    </button>
+                    <button id="testAvatarApi" class="btn" style="background: #333; color: white;">
+                        <i class="fa-solid fa-vial"></i> Test
+                    </button>
+                </div>
+                <div id="avatarStatus" style="margin-top: 1rem; color: var(--primary);"></div>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="assets/js/app.js"></script>
+</body>
+</html>

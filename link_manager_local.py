@@ -20,6 +20,9 @@ UPDATE_LIMIT = int(os.environ.get("LINK_UPDATE_LIMIT", "200") or "200")
 SAFE_MODE = os.environ.get("LINK_SAFE_MODE", "1") == "1"
 ALLOWED_HOSTS = [x.strip().lower() for x in (os.environ.get("LINK_ALLOWED_HOSTS") or "").split(",") if x.strip()]
 BLOCK_PATTERNS = [x.strip() for x in (os.environ.get("LINK_BLOCK_PATTERNS") or "").split(",") if x.strip()]
+HTML_DIR = os.environ.get("LINK_HTML_DIR") or os.path.join(DATA_DIR, "html_pages")
+_DEFAULT_MAX_HTML_SIZE = 5 * 1024 * 1024
+MAX_HTML_SIZE = int(os.environ.get("LINK_MAX_HTML_SIZE", _DEFAULT_MAX_HTML_SIZE) or _DEFAULT_MAX_HTML_SIZE)
 
 def load_map():
     try:
@@ -121,6 +124,11 @@ def url_allowed(u: str):
             if pat and (pat in ls):
                 return False
     return True
+
+def _safe_filename(key: str) -> str:
+    """Return a filesystem-safe filename component from a link key."""
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", key or "unknown")
+    return safe[:128]
 
 @app.route("/health")
 def health():
@@ -258,6 +266,9 @@ def proxy_pcc_ords(sub):
     return _proxy_to_pcc(f"ords/{sub}")
 
 def _inject_client_replacer(html: str, pairs):
+    # Only inject when there are actual replacement pairs to apply.
+    if not pairs:
+        return html
     try:
         arr = []
         try:
@@ -270,6 +281,8 @@ def _inject_client_replacer(html: str, pairs):
                 })
         except Exception:
             arr = []
+        if not arr:
+            return html
         js = (
             "<script>(function(){"+
             "var P=" + json.dumps(arr) + ";"+
@@ -311,8 +324,19 @@ def redirect_key(key):
     mode = (entry.get("mode") or "redirect").lower()
     url = entry.get("url")
     status = int(entry.get("status") or (request.args.get("status") or 302))
-    if SAFE_MODE and mode != "redirect":
+    if SAFE_MODE and mode not in ("redirect", "html"):
         mode = "redirect"
+    if mode == "html":
+        html_file = os.path.join(HTML_DIR, _safe_filename(key) + ".html")
+        try:
+            with open(html_file, "rb") as f:
+                body = f.read()
+            # Serve the file byte-for-byte as uploaded — no modifications.
+            return Response(body, content_type="text/html; charset=utf-8")
+        except FileNotFoundError:
+            return jsonify({"error":"html_not_found","detail":"No HTML file uploaded for this key"}), 404
+        except Exception as e:
+            return jsonify({"error":"html_serve_failed","detail":str(e)}), 500
     if mode == "render":
         if requests is None:
             return jsonify({"error":"proxy_unavailable","detail":"requests_not_installed"}), 500
@@ -487,9 +511,12 @@ def set_link():
         data = request.form.to_dict()
     key = (data.get("key") or "").strip()
     url = (data.get("url") or "").strip()
-    if not key or not url:
+    mode = (data.get("mode") or "redirect").lower()
+    if not key:
         return jsonify({"error":"invalid_input"}), 400
-    if not url_allowed(url):
+    if mode != "html" and not url:
+        return jsonify({"error":"invalid_input"}), 400
+    if mode != "html" and not url_allowed(url):
         return jsonify({"error":"url_not_allowed"}), 400
     m = load_map()
     exists = key in m
@@ -498,14 +525,14 @@ def set_link():
     meta = load_meta()
     entry = {
         "url": url,
-        "mode": (data.get("mode") or "redirect").lower(),
+        "mode": mode,
         "status": int(data.get("status") or 302),
         "banner_html": data.get("banner_html") or "",
         "replace_pairs": data.get("replace_pairs") or [],
         "meta": data.get("meta") or {},
         "asset_proxy": bool(data.get("asset_proxy"))
     }
-    if SAFE_MODE and entry["mode"] != "redirect":
+    if SAFE_MODE and entry["mode"] not in ("redirect", "html"):
         entry["mode"] = "redirect"
     if exists:
         if meta.get("updates", 0) >= UPDATE_LIMIT:
@@ -604,6 +631,117 @@ def purge_links():
         return jsonify({"error":"confirm_required"}), 400
     save_map({}); meta = {"date": today_str(), "creates": 0, "updates": 0, "total_keys": 0}
     save_meta(meta)
+    return jsonify({"ok": True})
+
+# --- HTML Page Upload / Management ---
+
+@app.route("/api/links/upload-html", methods=["POST"])
+def upload_html():
+    """Upload an HTML file and create/update a link entry with mode='html'.
+    Accepts multipart/form-data with fields: key, file (HTML), and optionally title/banner_html.
+    """
+    if not admin_auth_ok():
+        return jsonify({"error":"unauthorized"}), 401
+    key = (request.form.get("key") or "").strip()
+    if not key:
+        return jsonify({"error":"invalid_input","detail":"key is required"}), 400
+    if not re.match(r"^[A-Za-z0-9_\-]{1,128}$", key):
+        return jsonify({"error":"invalid_input","detail":"key must be alphanumeric/dash/underscore, max 128 chars"}), 400
+    html_file = request.files.get("file")
+    if not html_file:
+        return jsonify({"error":"invalid_input","detail":"file is required"}), 400
+    content = html_file.read(MAX_HTML_SIZE + 1)
+    if len(content) > MAX_HTML_SIZE:
+        return jsonify({"error":"file_too_large","detail":f"Max {MAX_HTML_SIZE} bytes"}), 413
+    try:
+        os.makedirs(HTML_DIR, exist_ok=True)
+    except Exception as e:
+        return jsonify({"error":"storage_error","detail":str(e)}), 500
+    dest = os.path.join(HTML_DIR, _safe_filename(key) + ".html")
+    try:
+        # Store as raw bytes to preserve the file exactly as uploaded.
+        with open(dest, "wb") as f:
+            f.write(content)
+    except Exception as e:
+        return jsonify({"error":"storage_error","detail":str(e)}), 500
+    m = load_map()
+    exists = key in m
+    meta = load_meta()
+    if FREEZE_CREATE and not exists:
+        return jsonify({"error":"creation_frozen"}), 403
+    if exists:
+        if meta.get("updates", 0) >= UPDATE_LIMIT:
+            return jsonify({"error":"too_many_updates"}), 429
+        meta["updates"] = meta.get("updates", 0) + 1
+    else:
+        if meta.get("creates", 0) >= CREATE_LIMIT:
+            return jsonify({"error":"too_many_creates"}), 429
+        meta["creates"] = meta.get("creates", 0) + 1
+        meta["total_keys"] = meta.get("total_keys", 0) + 1
+    title = (request.form.get("title") or "").strip()
+    banner_html = (request.form.get("banner_html") or "").strip()
+    entry = {
+        "url": "",
+        "mode": "html",
+        "status": 200,
+        "banner_html": banner_html,
+        "replace_pairs": [],
+        "meta": {"title": title},
+        "asset_proxy": False
+    }
+    m[key] = entry
+    save_map(m)
+    save_meta(meta)
+    return jsonify({"ok": True, "key": key, "mode": "html", "title": title})
+
+@app.route("/api/links/list-html")
+def list_html_pages():
+    """List all links with mode='html' and their metadata."""
+    if not admin_auth_ok():
+        return jsonify({"error":"unauthorized"}), 401
+    m = load_map()
+    pages = []
+    for key, entry in m.items():
+        if isinstance(entry, dict) and entry.get("mode") == "html":
+            fname = os.path.join(HTML_DIR, _safe_filename(key) + ".html")
+            size = 0
+            try:
+                size = os.path.getsize(fname)
+            except Exception:
+                pass
+            pages.append({
+                "key": key,
+                "title": (entry.get("meta") or {}).get("title") or "",
+                "banner_html": entry.get("banner_html") or "",
+                "size": size,
+                "has_file": os.path.isfile(fname)
+            })
+    return jsonify({"ok": True, "pages": pages})
+
+@app.route("/api/links/delete-html", methods=["POST"])
+def delete_html_page():
+    """Delete an HTML page (removes the file and the link entry)."""
+    if not admin_auth_ok():
+        return jsonify({"error":"unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    if not data and request.form:
+        data = request.form.to_dict()
+    key = (data.get("key") or "").strip()
+    if not key:
+        return jsonify({"error":"invalid_input"}), 400
+    m = load_map()
+    if key not in m:
+        return jsonify({"error":"not_found"}), 404
+    del m[key]
+    meta = load_meta()
+    meta["total_keys"] = max(0, meta.get("total_keys", 0) - 1)
+    save_map(m)
+    save_meta(meta)
+    fname = os.path.join(HTML_DIR, _safe_filename(key) + ".html")
+    try:
+        os.remove(fname)
+    except Exception:
+        pass
     return jsonify({"ok": True})
 
 @app.route("/api/admin/token/set", methods=["POST"])

@@ -1,0 +1,6 @@
+# Runtime data directories (uploaded HTML pages, links data)
+data/
+__pycache__/
+*.pyc
+*.pyo
+.env
