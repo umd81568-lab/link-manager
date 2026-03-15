@@ -136,7 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const color = colors[type] || '#ccc';
         const icon = icons[type] || 'fa-circle-info';
         el.innerHTML = `
-            <div style="background: rgba(${type==='success'?'0,255,127':'type'==='error'?'255,0,85':'0,242,234'},0.08); padding: 1rem; border-radius: 8px; border: 1px solid ${color};">
+            <div style="background: rgba(${type==='success'?'0,255,127':type==='error'?'255,0,85':'0,242,234'},0.08); padding: 1rem; border-radius: 8px; border: 1px solid ${color};">
                 <p style="color: ${color}; margin-bottom: ${extra ? '8px' : '0'}; font-weight: bold;">
                     <i class="fa-solid ${icon}"></i> ${message}
                 </p>

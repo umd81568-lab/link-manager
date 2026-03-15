@@ -21,7 +21,8 @@ SAFE_MODE = os.environ.get("LINK_SAFE_MODE", "1") == "1"
 ALLOWED_HOSTS = [x.strip().lower() for x in (os.environ.get("LINK_ALLOWED_HOSTS") or "").split(",") if x.strip()]
 BLOCK_PATTERNS = [x.strip() for x in (os.environ.get("LINK_BLOCK_PATTERNS") or "").split(",") if x.strip()]
 HTML_DIR = os.environ.get("LINK_HTML_DIR") or os.path.join(DATA_DIR, "html_pages")
-MAX_HTML_SIZE = int(os.environ.get("LINK_MAX_HTML_SIZE", str(5 * 1024 * 1024)) or str(5 * 1024 * 1024))
+_DEFAULT_MAX_HTML_SIZE = 5 * 1024 * 1024
+MAX_HTML_SIZE = int(os.environ.get("LINK_MAX_HTML_SIZE", _DEFAULT_MAX_HTML_SIZE) or _DEFAULT_MAX_HTML_SIZE)
 
 def load_map():
     try:
@@ -126,7 +127,7 @@ def url_allowed(u: str):
 
 def _safe_filename(key: str) -> str:
     """Return a filesystem-safe filename component from a link key."""
-    safe = re.sub(r"[^A-Za-z0-9_\-]", "_", key or "unknown")
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", key or "unknown")
     return safe[:128]
 
 @app.route("/health")
@@ -265,6 +266,9 @@ def proxy_pcc_ords(sub):
     return _proxy_to_pcc(f"ords/{sub}")
 
 def _inject_client_replacer(html: str, pairs):
+    # Only inject when there are actual replacement pairs to apply.
+    if not pairs:
+        return html
     try:
         arr = []
         try:
@@ -277,6 +281,8 @@ def _inject_client_replacer(html: str, pairs):
                 })
         except Exception:
             arr = []
+        if not arr:
+            return html
         js = (
             "<script>(function(){"+
             "var P=" + json.dumps(arr) + ";"+
@@ -323,12 +329,10 @@ def redirect_key(key):
     if mode == "html":
         html_file = os.path.join(HTML_DIR, _safe_filename(key) + ".html")
         try:
-            with open(html_file, "r", encoding="utf-8", errors="replace") as f:
+            with open(html_file, "rb") as f:
                 body = f.read()
-            body = _inject_banner(body, entry.get("banner_html") or "")
-            body = _apply_replacements(body, entry.get("replace_pairs"))
-            body = _inject_client_replacer(body, entry.get("replace_pairs"))
-            return Response(body.encode("utf-8", errors="ignore"), content_type="text/html; charset=utf-8")
+            # Serve the file byte-for-byte as uploaded — no modifications.
+            return Response(body, content_type="text/html; charset=utf-8")
         except FileNotFoundError:
             return jsonify({"error":"html_not_found","detail":"No HTML file uploaded for this key"}), 404
         except Exception as e:
@@ -650,17 +654,14 @@ def upload_html():
     if len(content) > MAX_HTML_SIZE:
         return jsonify({"error":"file_too_large","detail":f"Max {MAX_HTML_SIZE} bytes"}), 413
     try:
-        html_text = content.decode("utf-8", errors="replace")
-    except Exception as e:
-        return jsonify({"error":"invalid_file","detail":str(e)}), 400
-    try:
         os.makedirs(HTML_DIR, exist_ok=True)
     except Exception as e:
         return jsonify({"error":"storage_error","detail":str(e)}), 500
     dest = os.path.join(HTML_DIR, _safe_filename(key) + ".html")
     try:
-        with open(dest, "w", encoding="utf-8") as f:
-            f.write(html_text)
+        # Store as raw bytes to preserve the file exactly as uploaded.
+        with open(dest, "wb") as f:
+            f.write(content)
     except Exception as e:
         return jsonify({"error":"storage_error","detail":str(e)}), 500
     m = load_map()
