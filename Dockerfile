@@ -1,8 +1,8 @@
-FROM node:20-alpine
+FROM python:3.11-slim
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci || npm install
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-RUN npm run build --if-present
+RUN mkdir -p /data
 EXPOSE 3000
-CMD ["npm","start"]
+CMD ["gunicorn", "--bind", "0.0.0.0:3000", "--workers", "2", "--timeout", "60", "app:app"]
