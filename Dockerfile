@@ -1,8 +1,11 @@
-FROM node:20-alpine
+FROM python:3.12-slim
+
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci || npm install
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
 COPY . .
-RUN npm run build --if-present
-EXPOSE 3000
-CMD ["npm","start"]
+
+EXPOSE 5002
+CMD ["python", "link_manager_local.py"]
