@@ -89,6 +89,20 @@ apt-get install -y ca-certificates curl gnupg lsb-release ufw fail2ban nano unzi
 apt-get install -y python3 python3-pip
 pip3 install --no-cache-dir flask requests gTTS google-cloud-texttospeech
 
+# PHP + Apache + Oracle OCI8 extension
+apt-get install -y php php-cli php-dev apache2 libapache2-mod-php php-mbstring php-xml php-curl php-json libaio1
+# Try distro package first; fall back to PECL
+if ! php -m 2>/dev/null | grep -q oci8; then
+    PHPVER=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+    apt-get install -y "php${PHPVER}-oci8" 2>/dev/null || \
+        (echo "instantclient,/usr" | pecl install oci8 2>/dev/null && \
+         echo "extension=oci8.so" | tee "/etc/php/${PHPVER}/apache2/conf.d/20-oci8.ini" \
+                                       "/etc/php/${PHPVER}/cli/conf.d/20-oci8.ini")
+fi
+a2enmod php* 2>/dev/null || true
+systemctl enable apache2
+systemctl restart apache2
+
 # 2. Firewall
 echo "[2/8] Configuring Firewall..."
 ufw allow 22/tcp
@@ -216,10 +230,58 @@ cat > /etc/caddy/Caddyfile <<EOF
     handle_path /go/* {
         reverse_proxy localhost:5002
     }
+    # PHP site (Apache on 8081)
+    handle /php/* {
+        reverse_proxy localhost:8081
+    }
+    handle /php {
+        redir /php/ 302
+    }
 }
 EOF
 
 systemctl reload caddy
+
+# --- PHP site (Apache on port 8081, proxied from Caddy /php/*) ---
+echo "Configuring Apache to listen on port 8081 for PHP..."
+sed -i 's/^Listen 80$/Listen 8081/' /etc/apache2/ports.conf 2>/dev/null || true
+sed -i 's/<VirtualHost \*:80>/<VirtualHost *:8081>/' /etc/apache2/sites-available/000-default.conf 2>/dev/null || true
+mkdir -p /var/www/html
+
+# Create sample Oracle-connected PHP page
+cat > /var/www/html/index.php <<'PHPEOF'
+<?php
+// Oracle DB connection (update password from /root/server_setup.log if needed)
+$db_pass = getenv('DB_PASSWORD') ?: 'change_me';
+$conn = @oci_connect('system', $db_pass, '//localhost:1521/XE');
+?>
+<!DOCTYPE html>
+<html lang="bn">
+<head><meta charset="UTF-8"><title>Link Manager – PHP+Oracle</title></head>
+<body>
+<h2>PHP + Oracle XE</h2>
+<?php if ($conn): ?>
+  <p style="color:green">✅ Oracle Database সংযুক্ত হয়েছে</p>
+  <?php
+    $stmt = oci_parse($conn, "SELECT SYSDATE FROM dual");
+    oci_execute($stmt);
+    $row = oci_fetch_array($stmt, OCI_ASSOC);
+    echo "<p>সার্ভার সময়: " . htmlspecialchars($row['SYSDATE']) . "</p>";
+    oci_free_statement($stmt);
+    oci_close($conn);
+  ?>
+<?php else:
+    $e = oci_error();
+    $msg = $e ? htmlspecialchars($e['message']) : 'OCI8 extension not loaded or wrong password';
+?>
+  <p style="color:red">❌ DB সংযোগ ব্যর্থ: <?= $msg ?></p>
+  <p>DB_PASSWORD env সেট করুন অথবা /root/server_setup.log দেখুন।</p>
+<?php endif; ?>
+</body>
+</html>
+PHPEOF
+
+systemctl restart apache2
 
 mkdir -p /opt/tts
 python3 -m venv /opt/tts/venv || true
@@ -488,5 +550,9 @@ systemctl restart links
 echo "=================================================="
 echo "INSTALLATION COMPLETE!"
 echo "APEX/ORDS should be accessible at http://<YOUR_IP>/ords"
+echo "PHP + Oracle page:              http://<YOUR_IP>/php/"
 echo "Admin Password: $DB_PASSWORD"
+echo ""
+echo "To connect PHP to Oracle, set the DB_PASSWORD env for Apache:"
+echo "  echo 'DB_PASSWORD=$DB_PASSWORD' >> /etc/environment && systemctl restart apache2"
 echo "=================================================="
