@@ -199,6 +199,14 @@ def parse_fields_override(raw):
         return [x.strip() for x in t.split(",") if x.strip()]
     return []
 
+def create_unique_id(existing_ids, length=10, max_tries=20):
+    s = set(existing_ids or [])
+    for _ in range(max_tries):
+        v = uuid.uuid4().hex[:length]
+        if v not in s:
+            return v
+    return uuid.uuid4().hex
+
 def url_allowed(u: str):
     s = (u or "").strip()
     if not s:
@@ -483,7 +491,7 @@ def api_live_template_create():
     fields = edited_fields if edited_fields else auto_fields
 
     live = load_live()
-    template_id = uuid.uuid4().hex[:10]
+    template_id = create_unique_id([t.get("id") for t in live.get("templates", [])], length=10)
     template_path = os.path.join(LIVE_TEMPLATE_DIR, f"{template_id}.html")
     with open(template_path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -525,7 +533,7 @@ def api_live_link_create():
     except Exception:
         return jsonify({"error":"invalid_params_json"}), 400
 
-    link_id = uuid.uuid4().hex[:10]
+    link_id = create_unique_id([x.get("id") for x in live.get("links", [])], length=10)
     q1 = urlencode({k: "" if v is None else str(v) for k, v in params.items()}, doseq=True)
     query = "&".join([x for x in [q1, custom_query] if x])
     url = f"{domain}/live/{link_id}"
