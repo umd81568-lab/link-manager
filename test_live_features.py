@@ -78,6 +78,12 @@ class LiveFeaturesTest(unittest.TestCase):
         self.assertIn("Karim", page)
         self.assertIn("hello", page)
 
+        r = self.client.get(f"/live/{link_id}?name=%3Cscript%3Ealert(1)%3C/script%3E&key1=x")
+        self.assertEqual(r.status_code, 200, r.data)
+        page = r.get_data(as_text=True)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", page)
+        self.assertNotIn("<script>alert(1)</script>", page)
+
 
 if __name__ == "__main__":
     unittest.main()

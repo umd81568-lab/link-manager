@@ -1,6 +1,7 @@
 import os, json
 import re
 import uuid
+import html as html_lib
 from urllib.parse import urlencode, urlparse
 from flask import Flask, request, jsonify, redirect, Response, send_from_directory
 try:
@@ -176,7 +177,7 @@ def render_live_template(html: str, params: dict):
     def _repl(m):
         k = m.group(1)
         val = params.get(k, "")
-        return "" if val is None else str(val)
+        return "" if val is None else html_lib.escape(str(val), quote=True)
     try:
         return re.sub(r"{{\s*([a-zA-Z0-9_]+)\s*}}", _repl, html or "")
     except Exception:
@@ -335,7 +336,7 @@ def live_panel():
 <body>
   <h2>Live Link Manager</h2>
   <div class="card">
-    <h3>1) Multiple Domain</h3>
+    <h3>1) Multiple Domains</h3>
     <form id="domainForm"><input id="domainInput" placeholder="example.com or https://example.com" required /><button>Add Domain</button></form>
   </div>
   <div class="card">
@@ -499,6 +500,8 @@ def api_live_template_create():
 def api_live_link_create():
     if not admin_auth_ok():
         return jsonify({"error":"unauthorized"}), 401
+    if qrcode is None:
+        return jsonify({"error":"qrcode_dependency_missing"}), 500
     data = request.get_json(silent=True) or {}
     if not data and request.form:
         data = request.form.to_dict()
@@ -529,8 +532,6 @@ def api_live_link_create():
     if query:
         url = f"{url}?{query}"
 
-    if qrcode is None:
-        return jsonify({"error":"qrcode_dependency_missing"}), 500
     qr_name = f"{link_id}.png"
     qr_path = os.path.join(LIVE_QR_DIR, qr_name)
     qrobj = qrcode.QRCode(version=1, box_size=8, border=2)
