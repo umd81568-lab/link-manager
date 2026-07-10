@@ -3,6 +3,7 @@ import re
 import uuid
 import html as html_lib
 from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qsl
 from flask import Flask, request, jsonify, redirect, Response, send_from_directory
 try:
     import requests
@@ -563,8 +564,14 @@ def api_live_link_create():
         return jsonify({"error":"invalid_params_json"}), 400
 
     link_id = create_unique_id([x.get("id") for x in live.get("links", [])], length=10)
-    q1 = urlencode({k: "" if v is None else str(v) for k, v in params.items()}, doseq=True)
-    query = "&".join([x for x in [q1, custom_query] if x])
+    q1 = urlencode({k: str(v) for k, v in params.items() if v is not None}, doseq=True)
+    normalized_custom = ""
+    if custom_query:
+        try:
+            normalized_custom = urlencode(parse_qsl(custom_query, keep_blank_values=True), doseq=True)
+        except Exception:
+            return jsonify({"error":"invalid_custom_query"}), 400
+    query = "&".join([x for x in [q1, normalized_custom] if x])
     url = f"{domain}/live/{link_id}"
     if query:
         url = f"{url}?{query}"
