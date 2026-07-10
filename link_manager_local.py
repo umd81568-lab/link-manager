@@ -1,10 +1,16 @@
 import os, json
 import re
+import uuid
+from urllib.parse import urlencode, urlparse
 from flask import Flask, request, jsonify, redirect, Response, send_from_directory
 try:
     import requests
 except Exception:
     requests = None
+try:
+    import qrcode
+except Exception:
+    qrcode = None
 
 app = Flask(__name__)
 # Portable storage paths (Windows-friendly). Allow override via environment.
@@ -20,6 +26,22 @@ UPDATE_LIMIT = int(os.environ.get("LINK_UPDATE_LIMIT", "200") or "200")
 SAFE_MODE = os.environ.get("LINK_SAFE_MODE", "1") == "1"
 ALLOWED_HOSTS = [x.strip().lower() for x in (os.environ.get("LINK_ALLOWED_HOSTS") or "").split(",") if x.strip()]
 BLOCK_PATTERNS = [x.strip() for x in (os.environ.get("LINK_BLOCK_PATTERNS") or "").split(",") if x.strip()]
+LIVE_FILE = os.environ.get("LINK_LIVE_FILE") or os.path.join(DATA_DIR, "live_links.json")
+LIVE_TEMPLATE_DIR = os.environ.get("LINK_LIVE_TEMPLATE_DIR") or os.path.join(DATA_DIR, "live_templates")
+LIVE_QR_DIR = os.environ.get("LINK_LIVE_QR_DIR") or os.path.join(DATA_DIR, "live_qr")
+
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+except Exception:
+    pass
+try:
+    os.makedirs(LIVE_TEMPLATE_DIR, exist_ok=True)
+except Exception:
+    pass
+try:
+    os.makedirs(LIVE_QR_DIR, exist_ok=True)
+except Exception:
+    pass
 
 def load_map():
     try:
@@ -57,6 +79,28 @@ def load_meta():
         meta["updates"] = 0
     meta.setdefault("total_keys", len(m))
     return meta
+
+def load_live():
+    default = {"domains": [], "templates": [], "links": []}
+    try:
+        with open(LIVE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if not isinstance(data, dict):
+                return default
+            data.setdefault("domains", [])
+            data.setdefault("templates", [])
+            data.setdefault("links", [])
+            return data
+    except Exception:
+        return default
+
+def save_live(data):
+    try:
+        os.makedirs(os.path.dirname(LIVE_FILE), exist_ok=True)
+    except Exception:
+        pass
+    with open(LIVE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
 
 def save_meta(meta):
     try:
@@ -98,6 +142,61 @@ def _host_of(u: str):
         return (m.group(1) or "").strip().lower() if m else ""
     except Exception:
         return ""
+
+def normalize_domain(v: str):
+    s = (v or "").strip()
+    if not s:
+        return ""
+    if not s.startswith("http://") and not s.startswith("https://"):
+        s = "https://" + s
+    try:
+        p = urlparse(s)
+        if p.scheme not in ("http", "https"):
+            return ""
+        if not p.netloc:
+            return ""
+        return f"{p.scheme}://{p.netloc}".rstrip("/")
+    except Exception:
+        return ""
+
+def extract_placeholders(html: str):
+    found = []
+    seen = set()
+    try:
+        for m in re.finditer(r"{{\s*([a-zA-Z0-9_]+)\s*}}", html or ""):
+            key = m.group(1)
+            if key and key not in seen:
+                seen.add(key)
+                found.append(key)
+    except Exception:
+        return []
+    return found
+
+def render_live_template(html: str, params: dict):
+    def _repl(m):
+        k = m.group(1)
+        val = params.get(k, "")
+        return "" if val is None else str(val)
+    try:
+        return re.sub(r"{{\s*([a-zA-Z0-9_]+)\s*}}", _repl, html or "")
+    except Exception:
+        return html or ""
+
+def parse_fields_override(raw):
+    if isinstance(raw, list):
+        return [str(x).strip() for x in raw if str(x).strip()]
+    if isinstance(raw, str):
+        t = raw.strip()
+        if not t:
+            return []
+        try:
+            obj = json.loads(t)
+            if isinstance(obj, list):
+                return [str(x).strip() for x in obj if str(x).strip()]
+        except Exception:
+            pass
+        return [x.strip() for x in t.split(",") if x.strip()]
+    return []
 
 def url_allowed(u: str):
     s = (u or "").strip()
@@ -150,6 +249,309 @@ def assets_static(path):
         return send_from_directory(p, path)
     except Exception:
         return jsonify({"error":"asset_not_found"}), 404
+
+@app.route("/panel/live")
+def live_panel():
+    if not admin_auth_ok():
+        return jsonify({"error":"unauthorized"}), 401
+    return """<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live Link Manager</title>
+  <style>
+    body{font-family:Arial,sans-serif;max-width:980px;margin:20px auto;padding:0 12px}
+    .card{border:1px solid #ddd;border-radius:8px;padding:14px;margin-bottom:14px}
+    input,select,textarea,button{width:100%;padding:9px;margin-top:8px;box-sizing:border-box}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    table{width:100%;border-collapse:collapse}
+    th,td{border:1px solid #ddd;padding:8px;font-size:12px}
+    @media(max-width:760px){.row{grid-template-columns:1fr}}
+  </style>
+  <script>
+    async function j(url, opts){
+      const r = await fetch(url, opts);
+      const d = await r.json();
+      if(!r.ok){ throw new Error(d.error || "request_failed"); }
+      return d;
+    }
+    async function refresh() {
+      const data = await j('/api/live/state' + window.location.search);
+      const ds = document.getElementById('domains');
+      ds.innerHTML = data.domains.map(d => `<option value="${d}">${d}</option>`).join('');
+      const ts = document.getElementById('templates');
+      ts.innerHTML = data.templates.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+      const rows = data.links.map(l => `<tr><td>${l.id}</td><td>${l.domain}</td><td><a target="_blank" href="${l.url}">${l.url}</a></td><td><a target="_blank" href="${l.qr_url}">QR</a></td></tr>`).join('');
+      document.getElementById('links').innerHTML = rows;
+    }
+    async function addDomain(e){
+      e.preventDefault();
+      const domain = document.getElementById('domainInput').value;
+      await j('/api/live/domains/add' + window.location.search, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({domain})});
+      document.getElementById('domainInput').value = '';
+      await refresh();
+    }
+    async function detectTemplate(e){
+      e.preventDefault();
+      const fd = new FormData(document.getElementById('templateForm'));
+      const d = await fetch('/api/live/templates/detect' + window.location.search, {method:'POST', body:fd}).then(x=>x.json());
+      if(!d.ok && d.error){ throw new Error(d.error); }
+      document.getElementById('fields').value = (d.fields || []).join(', ');
+    }
+    async function saveTemplate(e){
+      e.preventDefault();
+      const fd = new FormData(document.getElementById('templateForm'));
+      await fetch('/api/live/templates/create' + window.location.search, {method:'POST', body:fd}).then(async r=>{
+        const d = await r.json();
+        if(!r.ok){ throw new Error(d.error || 'save_failed'); }
+      });
+      document.getElementById('templateName').value='';
+      document.getElementById('templateHtml').value='';
+      document.getElementById('templateFile').value='';
+      await refresh();
+    }
+    async function makeLink(e){
+      e.preventDefault();
+      const payload = {
+        domain: document.getElementById('domains').value,
+        template_id: document.getElementById('templates').value,
+        params_json: document.getElementById('paramsJson').value,
+        custom_query: document.getElementById('customQuery').value
+      };
+      const d = await j('/api/live/links/create' + window.location.search, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      document.getElementById('lastLink').innerHTML = `<a target="_blank" href="${d.url}">${d.url}</a> | <a target="_blank" href="${d.qr_url}">QR</a>`;
+      await refresh();
+    }
+    window.addEventListener('load', () => {
+      refresh().catch(e => alert(e.message));
+      document.getElementById('domainForm').addEventListener('submit', e => addDomain(e).catch(x=>alert(x.message)));
+      document.getElementById('detectBtn').addEventListener('click', e => detectTemplate(e).catch(x=>alert(x.message)));
+      document.getElementById('templateForm').addEventListener('submit', e => saveTemplate(e).catch(x=>alert(x.message)));
+      document.getElementById('linkForm').addEventListener('submit', e => makeLink(e).catch(x=>alert(x.message)));
+    });
+  </script>
+</head>
+<body>
+  <h2>Live Link Manager</h2>
+  <div class="card">
+    <h3>1) Multiple Domain</h3>
+    <form id="domainForm"><input id="domainInput" placeholder="example.com or https://example.com" required /><button>Add Domain</button></form>
+  </div>
+  <div class="card">
+    <h3>2) HTML Template Upload/Input</h3>
+    <form id="templateForm" enctype="multipart/form-data">
+      <input id="templateName" name="name" placeholder="Template name" required />
+      <textarea id="templateHtml" name="html" rows="8" placeholder="Paste full HTML with placeholders like {{name}}"></textarea>
+      <input id="templateFile" type="file" name="html_file" accept=".html,text/html" />
+      <button id="detectBtn" type="button">Detect Fields</button>
+      <input id="fields" name="fields_override" placeholder="Detected/editable fields (comma separated)" />
+      <button type="submit">Save Template</button>
+    </form>
+  </div>
+  <div class="card">
+    <h3>3) Generate Live Link + QR</h3>
+    <form id="linkForm">
+      <div class="row">
+        <div><label>Domain</label><select id="domains" required></select></div>
+        <div><label>Template</label><select id="templates" required></select></div>
+      </div>
+      <textarea id="paramsJson" rows="5" placeholder='{"key1":"value1","key2":"value2"}'></textarea>
+      <input id="customQuery" placeholder="key1=value1&key2=value2" />
+      <button>Create Live Link</button>
+    </form>
+    <div id="lastLink"></div>
+  </div>
+  <div class="card">
+    <h3>Saved Links</h3>
+    <table><thead><tr><th>ID</th><th>Domain</th><th>URL</th><th>QR</th></tr></thead><tbody id="links"></tbody></table>
+  </div>
+</body>
+</html>"""
+
+@app.route("/live/qr/<path:name>")
+def live_qr(name):
+    try:
+        return send_from_directory(LIVE_QR_DIR, name)
+    except Exception:
+        return jsonify({"error":"not_found"}), 404
+
+@app.route("/live/<link_id>")
+def live_render(link_id):
+    data = load_live()
+    link = next((x for x in data.get("links", []) if x.get("id") == link_id), None)
+    if not link:
+        return jsonify({"error":"not_found"}), 404
+    template_id = link.get("template_id")
+    tpl = next((x for x in data.get("templates", []) if x.get("id") == template_id), None)
+    if not tpl:
+        return jsonify({"error":"template_not_found"}), 404
+    try:
+        with open(tpl.get("path"), "r", encoding="utf-8") as f:
+            html = f.read()
+    except Exception:
+        return jsonify({"error":"template_missing"}), 404
+    params = {}
+    params.update(link.get("params") or {})
+    try:
+        params.update({k: v for k, v in request.args.items()})
+    except Exception:
+        pass
+    out = render_live_template(html, params)
+    return Response(out.encode("utf-8", errors="ignore"), content_type="text/html; charset=utf-8")
+
+@app.route("/api/live/state")
+def api_live_state():
+    if not admin_auth_ok():
+        return jsonify({"error":"unauthorized"}), 401
+    data = load_live()
+    links = []
+    for x in data.get("links", []):
+        links.append({
+            "id": x.get("id"),
+            "domain": x.get("domain"),
+            "url": x.get("url"),
+            "qr_url": x.get("qr_url"),
+            "template_id": x.get("template_id")
+        })
+    return jsonify({
+        "ok": True,
+        "domains": data.get("domains", []),
+        "templates": [{"id": t.get("id"), "name": t.get("name"), "fields": t.get("fields", [])} for t in data.get("templates", [])],
+        "links": links
+    })
+
+@app.route("/api/live/domains/add", methods=["POST"])
+def api_live_domain_add():
+    if not admin_auth_ok():
+        return jsonify({"error":"unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    if not data and request.form:
+        data = request.form.to_dict()
+    domain = normalize_domain(data.get("domain") or "")
+    if not domain:
+        return jsonify({"error":"invalid_domain"}), 400
+    live = load_live()
+    if domain not in live["domains"]:
+        live["domains"].append(domain)
+        save_live(live)
+    return jsonify({"ok": True, "domain": domain})
+
+def _read_template_content():
+    content = ""
+    if request.files and request.files.get("html_file"):
+        f = request.files.get("html_file")
+        try:
+            content = f.read().decode("utf-8", errors="ignore")
+        except Exception:
+            content = ""
+    if not content:
+        content = (request.form.get("html") or "").strip()
+    if not content:
+        data = request.get_json(silent=True) or {}
+        content = (data.get("html") or "").strip()
+    return content
+
+@app.route("/api/live/templates/detect", methods=["POST"])
+def api_live_template_detect():
+    if not admin_auth_ok():
+        return jsonify({"error":"unauthorized"}), 401
+    content = _read_template_content()
+    if not content:
+        return jsonify({"error":"html_required"}), 400
+    fields = extract_placeholders(content)
+    return jsonify({"ok": True, "fields": fields})
+
+@app.route("/api/live/templates/create", methods=["POST"])
+def api_live_template_create():
+    if not admin_auth_ok():
+        return jsonify({"error":"unauthorized"}), 401
+    name = (request.form.get("name") or "").strip()
+    if not name:
+        body = request.get_json(silent=True) or {}
+        name = (body.get("name") or "").strip()
+    content = _read_template_content()
+    if not name or not content:
+        return jsonify({"error":"invalid_input"}), 400
+    fields_raw = request.form.get("fields_override")
+    if not fields_raw:
+        body = request.get_json(silent=True) or {}
+        fields_raw = body.get("fields_override")
+    auto_fields = extract_placeholders(content)
+    edited_fields = parse_fields_override(fields_raw)
+    fields = edited_fields if edited_fields else auto_fields
+
+    live = load_live()
+    template_id = uuid.uuid4().hex[:10]
+    template_path = os.path.join(LIVE_TEMPLATE_DIR, f"{template_id}.html")
+    with open(template_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    live["templates"].append({
+        "id": template_id,
+        "name": name,
+        "path": template_path,
+        "fields": fields
+    })
+    save_live(live)
+    return jsonify({"ok": True, "id": template_id, "fields": fields})
+
+@app.route("/api/live/links/create", methods=["POST"])
+def api_live_link_create():
+    if not admin_auth_ok():
+        return jsonify({"error":"unauthorized"}), 401
+    data = request.get_json(silent=True) or {}
+    if not data and request.form:
+        data = request.form.to_dict()
+    domain = normalize_domain(data.get("domain") or "")
+    template_id = (data.get("template_id") or "").strip()
+    params_json = data.get("params_json")
+    custom_query = (data.get("custom_query") or "").strip().lstrip("?")
+    if not domain or not template_id:
+        return jsonify({"error":"invalid_input"}), 400
+
+    live = load_live()
+    if domain not in live.get("domains", []):
+        return jsonify({"error":"domain_not_found"}), 404
+    tpl = next((x for x in live.get("templates", []) if x.get("id") == template_id), None)
+    if not tpl:
+        return jsonify({"error":"template_not_found"}), 404
+    try:
+        params = json.loads(params_json) if isinstance(params_json, str) and params_json.strip() else (params_json or {})
+        if not isinstance(params, dict):
+            return jsonify({"error":"params_must_be_object"}), 400
+    except Exception:
+        return jsonify({"error":"invalid_params_json"}), 400
+
+    link_id = uuid.uuid4().hex[:10]
+    q1 = urlencode({k: "" if v is None else str(v) for k, v in params.items()}, doseq=True)
+    query = "&".join([x for x in [q1, custom_query] if x])
+    url = f"{domain}/live/{link_id}"
+    if query:
+        url = f"{url}?{query}"
+
+    if qrcode is None:
+        return jsonify({"error":"qrcode_dependency_missing"}), 500
+    qr_name = f"{link_id}.png"
+    qr_path = os.path.join(LIVE_QR_DIR, qr_name)
+    qrobj = qrcode.QRCode(version=1, box_size=8, border=2)
+    qrobj.add_data(url)
+    qrobj.make(fit=True)
+    img = qrobj.make_image(fill_color="black", back_color="white")
+    img.save(qr_path)
+    qr_url = f"/live/qr/{qr_name}"
+
+    live["links"].append({
+        "id": link_id,
+        "domain": domain,
+        "template_id": template_id,
+        "params": params,
+        "custom_query": custom_query,
+        "url": url,
+        "qr_path": qr_path,
+        "qr_url": qr_url
+    })
+    save_live(live)
+    return jsonify({"ok": True, "id": link_id, "url": url, "qr_url": qr_url})
 
 def _inject_banner(html: str, banner_html: str) -> str:
     try:
