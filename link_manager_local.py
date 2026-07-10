@@ -205,7 +205,11 @@ def create_unique_id(existing_ids, length=10, max_tries=20):
         v = uuid.uuid4().hex[:length]
         if v not in s:
             return v
-    return uuid.uuid4().hex
+    for _ in range(max_tries * 10):
+        v = uuid.uuid4().hex[:length]
+        if v not in s:
+            return v
+    raise ValueError("unable_to_generate_unique_id")
 
 def url_allowed(u: str):
     s = (u or "").strip()
@@ -279,6 +283,25 @@ def live_panel():
     @media(max-width:760px){.row{grid-template-columns:1fr}}
   </style>
   <script>
+    function authQS(){
+      const inQ = new URLSearchParams(window.location.search || '');
+      const out = new URLSearchParams();
+      ['token','password','pwd'].forEach(k => {
+        const v = inQ.get(k);
+        if(v){ out.set(k, v); }
+      });
+      const s = out.toString();
+      return s ? ('?' + s) : '';
+    }
+    function esc(v){
+      return String(v ?? '').replace(/[&<>"']/g, function(m){
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        if (m === '"') return '&quot;';
+        return '&#39;';
+      });
+    }
     async function j(url, opts){
       const r = await fetch(url, opts);
       const d = await r.json();
@@ -286,32 +309,32 @@ def live_panel():
       return d;
     }
     async function refresh() {
-      const data = await j('/api/live/state' + window.location.search);
+      const data = await j('/api/live/state' + authQS());
       const ds = document.getElementById('domains');
-      ds.innerHTML = data.domains.map(d => `<option value="${d}">${d}</option>`).join('');
+      ds.innerHTML = data.domains.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
       const ts = document.getElementById('templates');
-      ts.innerHTML = data.templates.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
-      const rows = data.links.map(l => `<tr><td>${l.id}</td><td>${l.domain}</td><td><a target="_blank" href="${l.url}">${l.url}</a></td><td><a target="_blank" href="${l.qr_url}">QR</a></td></tr>`).join('');
+      ts.innerHTML = data.templates.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+      const rows = data.links.map(l => `<tr><td>${esc(l.id)}</td><td>${esc(l.domain)}</td><td><a target="_blank" href="${esc(l.url)}">${esc(l.url)}</a></td><td><a target="_blank" href="${esc(l.qr_url)}">QR</a></td></tr>`).join('');
       document.getElementById('links').innerHTML = rows;
     }
     async function addDomain(e){
       e.preventDefault();
       const domain = document.getElementById('domainInput').value;
-      await j('/api/live/domains/add' + window.location.search, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({domain})});
+      await j('/api/live/domains/add' + authQS(), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({domain})});
       document.getElementById('domainInput').value = '';
       await refresh();
     }
     async function detectTemplate(e){
       e.preventDefault();
       const fd = new FormData(document.getElementById('templateForm'));
-      const d = await fetch('/api/live/templates/detect' + window.location.search, {method:'POST', body:fd}).then(x=>x.json());
+      const d = await fetch('/api/live/templates/detect' + authQS(), {method:'POST', body:fd}).then(x=>x.json());
       if(!d.ok && d.error){ throw new Error(d.error); }
       document.getElementById('fields').value = (d.fields || []).join(', ');
     }
     async function saveTemplate(e){
       e.preventDefault();
       const fd = new FormData(document.getElementById('templateForm'));
-      await fetch('/api/live/templates/create' + window.location.search, {method:'POST', body:fd}).then(async r=>{
+      await fetch('/api/live/templates/create' + authQS(), {method:'POST', body:fd}).then(async r=>{
         const d = await r.json();
         if(!r.ok){ throw new Error(d.error || 'save_failed'); }
       });
@@ -328,8 +351,8 @@ def live_panel():
         params_json: document.getElementById('paramsJson').value,
         custom_query: document.getElementById('customQuery').value
       };
-      const d = await j('/api/live/links/create' + window.location.search, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-      document.getElementById('lastLink').innerHTML = `<a target="_blank" href="${d.url}">${d.url}</a> | <a target="_blank" href="${d.qr_url}">QR</a>`;
+      const d = await j('/api/live/links/create' + authQS(), {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+      document.getElementById('lastLink').innerHTML = `<a target="_blank" href="${esc(d.url)}">${esc(d.url)}</a> | <a target="_blank" href="${esc(d.qr_url)}">QR</a>`;
       await refresh();
     }
     window.addEventListener('load', () => {
@@ -451,9 +474,9 @@ def _read_template_content():
     if request.files and request.files.get("html_file"):
         f = request.files.get("html_file")
         try:
-            content = f.read().decode("utf-8", errors="ignore")
+            content = f.read().decode("utf-8")
         except Exception:
-            content = ""
+            raise ValueError("invalid_html_encoding")
     if not content:
         content = (request.form.get("html") or "").strip()
     if not content:
@@ -465,7 +488,10 @@ def _read_template_content():
 def api_live_template_detect():
     if not admin_auth_ok():
         return jsonify({"error":"unauthorized"}), 401
-    content = _read_template_content()
+    try:
+        content = _read_template_content()
+    except ValueError:
+        return jsonify({"error":"invalid_html_encoding"}), 400
     if not content:
         return jsonify({"error":"html_required"}), 400
     fields = extract_placeholders(content)
@@ -479,7 +505,10 @@ def api_live_template_create():
     if not name:
         body = request.get_json(silent=True) or {}
         name = (body.get("name") or "").strip()
-    content = _read_template_content()
+    try:
+        content = _read_template_content()
+    except ValueError:
+        return jsonify({"error":"invalid_html_encoding"}), 400
     if not name or not content:
         return jsonify({"error":"invalid_input"}), 400
     fields_raw = request.form.get("fields_override")
