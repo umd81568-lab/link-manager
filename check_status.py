@@ -1,46 +1,48 @@
-import paramiko
+import argparse
 import sys
-import time
 
-HOSTNAME = "207.180.249.220"
-USERNAME = "root"
-PASSWORD = input("Enter Password: ")
+from deploy_config import add_ssh_target_args, connect_ssh_from_args
 
-def check_status():
-    if not PASSWORD:
-        print("No password provided")
-        return
 
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="Check whether setup_server.sh is still running on the server.")
+    parser.add_argument("password", nargs="?", help="SSH password (optional when using --key-file)")
+    add_ssh_target_args(parser)
+    return parser.parse_args(argv)
+
+
+
+def check_status(argv=None):
+    args = parse_args(argv)
     try:
-        print(f"Connecting to {HOSTNAME}...")
-        client.connect(HOSTNAME, username=USERNAME, password=PASSWORD)
+        client, settings = connect_ssh_from_args(args, prompt="Enter Server Root Password: ")
+    except Exception as exc:
+        print(f"Error: {exc}")
+        return 1
+
+    try:
+        print(f"Connecting to {settings['host']}...")
         print("Connected.")
-        
-        # Check if setup script is running
+
         stdin, stdout, stderr = client.exec_command("ps aux | grep setup_server.sh | grep -v grep")
         running = stdout.read().decode().strip()
-        
         if running:
             print("STATUS: Setup is RUNNING.")
         else:
             print("STATUS: Setup is NOT running (might be finished or failed).")
 
-        # Read last 20 lines of log
         print("\n--- Last 20 lines of /root/server_setup.log ---")
         stdin, stdout, stderr = client.exec_command("tail -n 20 /root/server_setup.log")
         print(stdout.read().decode())
-        
-        # Check if Caddy is running
+
         stdin, stdout, stderr = client.exec_command("systemctl is-active caddy")
         caddy_status = stdout.read().decode().strip()
         print(f"\nCaddy Status: {caddy_status}")
-
-    except Exception as e:
-        print(f"Error: {e}")
+        return 0
     finally:
         client.close()
 
+
 if __name__ == "__main__":
-    check_status()
+    sys.exit(check_status())
