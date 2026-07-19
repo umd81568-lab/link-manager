@@ -71,7 +71,8 @@ def resolve_ssh_secret(ssh_secret=None, key_file=None, prompt="Enter SSH passwor
 
 def connect_ssh(host, user, ssh_port=DEFAULT_DEPLOY_SSH_PORT, ssh_secret=None, key_file=None, timeout=15):
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.load_system_host_keys()
+    client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
     connect_kwargs = {
         "hostname": host,

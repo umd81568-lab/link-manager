@@ -24,33 +24,33 @@ Related SSH options:
 ## Common commands
 Deploy the main app update with password auth:
 ```bash
-python /home/runner/work/link-manager/link-manager/deploy_all.py my-root-password --host 18.184.78.224
+python deploy_all.py my-root-password --host 18.184.78.224
 ```
 
 Deploy with key auth:
 ```bash
-DEPLOY_HOST=18.184.78.224 python /home/runner/work/link-manager/link-manager/deploy_all.py --key-file ~/.ssh/id_rsa
+DEPLOY_HOST=18.184.78.224 python deploy_all.py --key-file ~/.ssh/id_rsa
 ```
 
 Deploy with domain/email/port overrides:
 ```bash
-python /home/runner/work/link-manager/link-manager/deploy_all.py my-root-password example.com admin@example.com 5002 --host 18.184.78.224
+python deploy_all.py my-root-password example.com admin@example.com 5002 --host 18.184.78.224
 ```
 
 Upload and run the full setup helper:
 ```bash
-python /home/runner/work/link-manager/link-manager/deploy.py my-root-password --host 18.184.78.224
+python deploy.py my-root-password --host 18.184.78.224
 ```
 
 Upload dashboard only:
 ```bash
-python /home/runner/work/link-manager/link-manager/push_dashboard.py my-root-password --host 18.184.78.224
+python push_dashboard.py my-root-password --host 18.184.78.224
 ```
 
 Check remote services:
 ```bash
-python /home/runner/work/link-manager/link-manager/remote_check.py my-root-password --host 18.184.78.224
-python /home/runner/work/link-manager/link-manager/check_tts.py my-root-password --host 18.184.78.224
+python remote_check.py my-root-password --host 18.184.78.224
+python check_tts.py my-root-password --host 18.184.78.224
 ```
 
 Windows PowerShell helper:
@@ -62,6 +62,7 @@ powershell -ExecutionPolicy Bypass -File .\deploy.ps1 -ServerIP 18.184.78.224
 - `cd /home/runner/work/link-manager/link-manager` first, or use full script paths as shown above.
 - The Python scripts now resolve local files relative to the script location, so they are safer to run from a panel or another current working directory.
 - `deploy_all.py` fails early if `link_manager_local.py` is missing instead of uploading partially.
+- If this is the first SSH connection from the machine, add the server key to `~/.ssh/known_hosts` first (for example by running `ssh root@18.184.78.224` once and confirming the fingerprint).
 
 ## Default services and ports
 - `links` app: `5002`

@@ -24,6 +24,20 @@ def run(client, cmd):
         print(err.strip())
 
 
+def run_with_input(client, cmd, lines):
+    print(f"$ {cmd}")
+    stdin, stdout, stderr = client.exec_command(cmd)
+    for line in lines:
+        stdin.write(f"{line}\n")
+    stdin.flush()
+    stdin.channel.shutdown_write()
+    out = stdout.read().decode(errors="ignore")
+    err = stderr.read().decode(errors="ignore")
+    if out:
+        print(out.strip())
+    if err:
+        print(err.strip())
+
 
 def main(argv=None):
     args = parse_args(argv)
@@ -40,16 +54,15 @@ def main(argv=None):
         if not db_password:
             print("Could not retrieve DB password from log.")
             return 2
-        print(f"DB_PASSWORD: {db_password}")
+        print("Retrieved ORDS database password from setup log.")
 
         run(client, "mkdir -p /opt/ords/config /var/log/ords")
         install_cmd = (
-            "bash -lc \"printf '%s\\n%s\\n' '" + db_password + "' '" + db_password + "' | "
             "/opt/ords/bin/ords --config /opt/ords/config install "
             "--log-folder /var/log/ords --admin-user SYS --db-hostname localhost "
-            "--db-port 1521 --db-servicename XE --feature-sdw true\""
+            "--db-port 1521 --db-servicename XE --feature-sdw true"
         )
-        run(client, install_cmd)
+        run_with_input(client, install_cmd, [db_password, db_password])
         run(client, "nohup /opt/ords/bin/ords --config /opt/ords/config serve --port 8080 > /var/log/ords.log 2>&1 &")
         run(client, "sleep 3; ss -tlnp | grep ':8080' || echo no_port8080")
         run(client, "curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:8080/ords/ || echo curl_fail_ords")

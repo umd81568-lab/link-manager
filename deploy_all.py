@@ -211,12 +211,12 @@ def main(argv=None):
             run_step(client, cmd, step)
 
         for step, cmd in [
-            ("start ords", "bash -lc 'cd /opt/ords && nohup ./bin/ords --config /opt/ords/config serve --port 8080 > /var/log/ords.log 2>&1 & disown || true'"),
+            ("start ords", "bash -lc 'cd /opt/ords && nohup ./bin/ords --config /opt/ords/config serve --port 8080 > /var/log/ords.log 2>&1 & disown'"),
             ("verify ords listener", 'bash -lc "sleep 3; ss -ltnp | grep \'127.0.0.1:8080\' || ss -ltnp | grep \'8080\' || tail -n 50 /var/log/ords.log || true"'),
             ("reload caddy after ords", "bash -lc 'systemctl list-unit-files | grep -q ^caddy.service && systemctl reload caddy || true'"),
             ("ords health", "bash -lc 'curl -sS -I http://127.0.0.1:8080/ords/ | head -n 1 || true'"),
         ]:
-            run_step(client, cmd, step)
+            run_step(client, cmd, step, critical=(step == "start ords"))
 
         if caddy_present:
             out, _, _ = run_step(
