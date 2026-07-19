@@ -1,7 +1,7 @@
 # link-manager deployment runbook
 
 ## Prerequisites
-- Python 3.10+ recommended.
+- Python 3.10+ required.
 - Install Python dependencies before running deploy scripts:
   - `python -m pip install -r requirements.txt paramiko`
 - Server assumptions:
@@ -20,6 +20,7 @@ Related SSH options:
 - `--ssh-port` / `DEPLOY_SSH_PORT` (default `22`)
 - `--key-file` / `DEPLOY_KEY_FILE`
 - password from positional arg or `DEPLOY_PASSWORD`
+- SSH host keys are validated against `~/.ssh/known_hosts`; for a first-time connection, run `ssh root@18.184.78.224` once and confirm the fingerprint.
 
 ## Common commands
 Deploy the main app update with password auth:
