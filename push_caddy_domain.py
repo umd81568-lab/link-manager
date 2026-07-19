@@ -1,8 +1,7 @@
+import argparse
 import sys
-import paramiko
 
-HOST = "207.180.249.220"
-USER = "root"
+from deploy_config import add_ssh_target_args, connect_ssh_from_args
 
 TEMPLATE = r"""
 {domain} {{
@@ -23,34 +22,48 @@ http://{domain} {{
 }}
 """
 
-def main():
-    if len(sys.argv) < 3:
-        print("Usage: python push_caddy_domain.py <root_password> <domain>")
-        return 1
-    pwd = sys.argv[1]
-    domain = sys.argv[2]
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(HOST, username=USER, password=pwd)
-    block = TEMPLATE.format(domain=domain)
-    print(f"\n>>> updating /etc/caddy/Caddyfile with domain: {domain}")
-    sftp = client.open_sftp()
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="Append a Caddy vhost block for the dashboard domain.")
+    parser.add_argument("password", nargs="?", help="SSH password (optional when using --key-file)")
+    parser.add_argument("domain")
+    add_ssh_target_args(parser)
+    return parser.parse_args(argv)
+
+
+
+def main(argv=None):
+    args = parse_args(argv)
     try:
-        with sftp.open('/etc/caddy/Caddyfile', 'r') as f:
-            existing = f.read().decode('utf-8', errors='ignore')
-    except Exception:
-        existing = ''
-    new_content = existing + "\n" + block
-    with sftp.open('/etc/caddy/Caddyfile', 'w') as f:
-        f.write(new_content)
-    sftp.close()
-    stdin, stdout, stderr = client.exec_command('systemctl reload caddy')
-    print(stdout.read().decode(errors='ignore'))
-    err = stderr.read().decode(errors='ignore')
-    if err:
-        print(err)
-    client.close()
-    return 0
+        client, _ = connect_ssh_from_args(args, prompt="Enter Server Root Password: ")
+    except Exception as exc:
+        print(f"SSH connection failed: {exc}")
+        return 1
+
+    try:
+        block = TEMPLATE.format(domain=args.domain)
+        print(f"\n>>> updating /etc/caddy/Caddyfile with domain: {args.domain}")
+        sftp = client.open_sftp()
+        try:
+            try:
+                with sftp.open("/etc/caddy/Caddyfile", "r") as handle:
+                    existing = handle.read().decode("utf-8", errors="ignore")
+            except Exception:
+                existing = ""
+            with sftp.open("/etc/caddy/Caddyfile", "w") as handle:
+                handle.write(existing + "\n" + block)
+        finally:
+            sftp.close()
+        stdin, stdout, stderr = client.exec_command("systemctl reload caddy")
+        print(stdout.read().decode(errors="ignore"))
+        err = stderr.read().decode(errors="ignore")
+        if err:
+            print(err)
+        return 0
+    finally:
+        client.close()
+
 
 if __name__ == "__main__":
     sys.exit(main())
